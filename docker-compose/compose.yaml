@@ -1,0 +1,16 @@
+name: ez-s3
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    hostname: minio
+    entrypoint: sh
+    command: -c 'mkdir -p /export/ezb && /usr/bin/minio server /export --console-address ':9001''
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - ./tls:/root/.minio/certs
+    ports:
+      - '9000:9000'  #API
+      - '9001:9001'  #Console
