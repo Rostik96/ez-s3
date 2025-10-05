@@ -40,6 +40,10 @@ interactive_mode() {
   read -p "Enter password (default: changeit): " PASSWORD
   PASSWORD="${PASSWORD:-changeit}"
 
+  # New option for private.key and public.crt
+  read -p "Provide also 'private.key' & 'public.crt'? (y/n, default: y): " EXPORT_KEY_CERT
+  EXPORT_KEY_CERT="${EXPORT_KEY_CERT:-y}"
+
   echo ""
   echo "Summary:"
   echo "- Alias/CN: $CLIENT_ALIAS"
@@ -50,6 +54,7 @@ interactive_mode() {
   echo "- Keystore file: $KEYSTORE_FILE"
   echo "- Truststore file: $TRUSTSTORE_FILE"
   echo "- Password: $PASSWORD"
+  echo "- Export private.key & public.crt: $EXPORT_KEY_CERT"
   echo ""
 
   read -p "Proceed? (y/n): " CONFIRM
@@ -68,6 +73,7 @@ command_line_mode() {
   KEYSTORE_TYPE=$(echo "$KEYSTORE_TYPE" | tr '[:lower:]' '[:upper:]')
   PASSWORD="${5:-changeit}"
   CA_PASSWORD="${6:-changeit}"
+  EXPORT_KEY_CERT="${7:-y}"
 
   # If SANs not provided, use CN as default
   if [ -z "$SANS" ]; then
@@ -108,15 +114,57 @@ parse_sans() {
   echo "${san_ext%,}"
 }
 
+# Export private key and certificate from keystore
+export_private_key_and_cert() {
+  local keystore_file="$1"
+  local alias_name="$2"
+  local password="$3"
+  local keystore_type="$4"
+
+  echo "=== Exporting private.key and public.crt ==="
+
+  # Export the client certificate in PEM format
+  keytool -keystore "$keystore_file" -storepass "$password" \
+    -exportcert -alias "$alias_name" -rfc -file "${alias_name}.crt.pem"
+
+  # For PKCS12 keystores, we can extract the private key more easily
+  if [ "$keystore_type" = "PKCS" ]; then
+    # Export the entire entry to a temporary PKCS12 file
+    keytool -importkeystore -srckeystore "$keystore_file" -srcstorepass "$password" \
+      -srcalias "$alias_name" -destkeystore "temp_${alias_name}.p12" \
+      -deststoretype PKCS12 -deststorepass "temp_pass" -noprompt
+
+    # Extract private key from the temporary PKCS12 file
+    openssl pkcs12 -in "temp_${alias_name}.p12" -passin pass:temp_pass \
+      -nodes -nocerts -out "${alias_name}.key.pem" 2>/dev/null
+
+    # Clean up temporary PKCS12 file
+    rm -f "temp_${alias_name}.p12"
+  else
+    # For JKS, we need to use keytool and openssl differently
+    # This is a fallback method that may require additional tools
+    echo "Warning: JKS private key extraction is limited. Consider using PKCS12 format for better key export capabilities."
+    echo "You can extract the private key manually using:"
+    echo "  keytool -importkeystore -srckeystore $keystore_file -srcstorepass $password -srcalias $alias_name -destkeystore temp.p12 -deststoretype PKCS12 -deststorepass temp_pass"
+    echo "  openssl pkcs12 -in temp.p12 -passin pass:temp_pass -nodes -nocerts -out ${alias_name}.key.pem"
+  fi
+
+  # Rename to the expected filenames
+  mv "${alias_name}.crt.pem" "public.crt"
+  mv "${alias_name}.key.pem" "private.key"
+
+  echo "Exported: private.key & public.crt"
+}
+
 # Check if running in interactive mode
 if [ $# -eq 0 ]; then
   interactive_mode
 else
   if [ -z "$3" ]; then
-    echo "Usage: $0 <client-alias> <sans> <path-to-ca-keystore> [JKS|PKCS] [password] [ca-password]"
+    echo "Usage: $0 <client-alias> <sans> <path-to-ca-keystore> [JKS|PKCS] [password] [ca-password] [export-key-cert(y/n)]"
     echo "  <sans>: comma-separated SANs (e.g., minio,localhost,127.0.0.1)"
     echo "Example: $0 myclient minio,localhost,127.0.0.1 /path/to/ca-keystore.p12"
-    echo "Default: PKCS format, password: changeit, CA password: changeit"
+    echo "Default: PKCS format, password: changeit, CA password: changeit, export-key-cert: y"
     echo ""
     echo "Or run without arguments for interactive mode"
     exit 1
@@ -171,6 +219,11 @@ echo "=== Importing signed client certificate ==="
 keytool -keystore "$KEYSTORE_FILE" -storepass "$PASSWORD" \
   -importcert -alias "$CLIENT_ALIAS" -file "$CLIENT_ALIAS.pem" -noprompt
 
+# Export private.key and public.crt if requested
+if [ "$EXPORT_KEY_CERT" = "y" ] || [ "$EXPORT_KEY_CERT" = "Y" ]; then
+  export_private_key_and_cert "$KEYSTORE_FILE" "$CLIENT_ALIAS" "$PASSWORD" "$KEYSTORE_TYPE"
+fi
+
 echo "=== Cleaning up temporary files ==="
 rm -v ca-cert.pem "$CLIENT_ALIAS.csr" "$CLIENT_ALIAS.pem"
 
@@ -178,6 +231,10 @@ echo "=== Done ==="
 echo "Generated files:"
 echo "- Truststore: $(pwd)/$TRUSTSTORE_FILE"
 echo "- Client keystore: $(pwd)/$KEYSTORE_FILE (alias: $CLIENT_ALIAS)"
+if [ "$EXPORT_KEY_CERT" = "y" ] || [ "$EXPORT_KEY_CERT" = "Y" ]; then
+  echo "- Private key: $(pwd)/private.key"
+  echo "- Public certificate: $(pwd)/public.crt"
+fi
 echo "- CN: $CLIENT_ALIAS"
 echo "- SANs: $SANS"
 echo "Keystore type: $KEYSTORE_TYPE"

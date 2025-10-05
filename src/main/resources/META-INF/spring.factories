@@ -1,0 +1,2 @@
+org.springframework.context.ApplicationContextInitializer=\
+  dev.rost.ezs3.Config

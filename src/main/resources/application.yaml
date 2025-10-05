@@ -3,22 +3,28 @@ spring:
     name: ez-s3
   docker:
     compose:
+      enabled: false
       file: docker-compose/compose.yaml
+  ssl:
+    bundle:
+      jks:
+        s3:
+          truststore:
+            type: PKCS12
+            location: classpath:truststore.p12
+            password: changeit
+          keystore:
+            type: PKCS12
+            location: classpath:keystore.p12
+            password: changeit
+
   cloud:
     aws:
-      s3:
-        enabled: true
-        endpoint: https://localhost:9000
-        path-style-access-enabled: true
-        ssl:
-          trust-store-type: PKCS12
-          trust-store-location: classpath:tls/truststore.p12
-          trust-store-password: ez4rtz
-          key-store-type: PKCS12
-          key-store-location: classpath:tls/keystore.p12
-          key-store-password: ez4rtz
       credentials:
         access-key: minioadmin
         secret-key: minioadmin
-      region:
-        static: us-east-1
+      s3:
+        enabled: true
+        endpoint: https://localhost:9000
+        region: us-east-1
+        path-style-access-enabled: true
