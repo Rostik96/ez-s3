@@ -3,7 +3,6 @@ spring:
     name: ez-s3
   docker:
     compose:
-      enabled: false
       file: docker-compose/compose.yaml
   ssl:
     bundle:
@@ -11,11 +10,11 @@ spring:
         s3:
           truststore:
             type: PKCS12
-            location: classpath:truststore.p12
+            location: classpath:tls/truststore.p12
             password: changeit
           keystore:
             type: PKCS12
-            location: classpath:keystore.p12
+            location: classpath:tls/keystore.p12
             password: changeit
 
   cloud:
